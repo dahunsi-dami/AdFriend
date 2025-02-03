@@ -5,5 +5,5 @@
   "description": "A Chrome extension that intercepts and replaces ad elements on web papges with cutomizable, positive content widgets.",
   "icons": {
     "128": "images/icon-128.png"
-  },
+  }
 }
