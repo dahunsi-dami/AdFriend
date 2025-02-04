@@ -79,8 +79,9 @@ function replaceAdsWithContent(contentType) {
   
   // Common ad-related keywords and patterns
   const adPatterns = {
-    classAndId: /\b(ad|ads|advert|banner|commercial|promo|sponsor|advertisement|marketing)\b/i,
-    attributes: ['data-ad', 'data-ad-client', 'data-ad-slot', 'data-adtest', 'data-advertising'],
+    classAndId: /\b(ad|ads|advert|banner|commercial|promo|sponsor|advertisement|marketing|StandardAd)\b/i,
+    attributes: ['data-ad', 'data-ad-client', 'data-ad-slot', 'data-adtest', 'data-advertising', 'data-ad-loc', 'data-ad-unit', 'data-ad-size', 'data-ad-region'],
+    attributeValues: /\b(StandardAd|Advertisement|[aA]d-\w+|[aA]ds?\b|[aA]dvert(isement)?s?|sponsor(ed)?|promoted|marketing|dfp)/i,
     domains: /(?:doubleclick|adsystem|adskeeper|adnxs|taboola|outbrain|mgid|criteo|googleadservices|google.*ads|adroll|amazon-adsystem|facebook.*ads)/i
   };
 
@@ -90,6 +91,21 @@ function replaceAdsWithContent(contentType) {
   elements.forEach(element => {
     // Skip if this element has already been processed
     if (element.hasAttribute('data-adfriend-processed')) {
+      return;
+    }
+
+    // Skip if any parent element has already been processed
+    let ancestor = element.parentElement;
+    while (ancestor) {
+      if (ancestor.hasAttribute('data-adfriend-processed')) {
+        return;
+      }
+      ancestor = ancestor.parentElement;
+    }
+
+    // NEW: Skip and hide zero-size elements
+    if (element.offsetWidth === 0 || element.offsetHeight === 0) {
+      // console.log('ZERO-SIZED ELEMENT HIDDEN!!!', element);
       return;
     }
 
@@ -106,6 +122,13 @@ function replaceAdsWithContent(contentType) {
     // Check custom data attributes
     adPatterns.attributes.forEach(attr => {
       if (element.hasAttribute(attr)) score += 2;
+    });
+
+    // Check if any attribute value matches ad patterns (NEWLY ADDED SECTION)
+    Array.from(element.attributes).forEach(attr => {
+      if (adPatterns.attributeValues.test(attr.value)) {
+        score += 2;
+      }
     });
 
     // Check src/href attributes for ad network domains
@@ -131,18 +154,81 @@ function replaceAdsWithContent(contentType) {
     // If element seems to be an ad (score threshold can be adjusted)
     if (score >= 2) {
       console.log('Ad detected with score:', score, element);
-      element.style.display = 'none';
-      // Mark this element as processed
-      element.setAttribute('data-adfriend-processed', 'true');
 
-      // Create a new widget element
+      // Find the topmost ad container
+      let adContainer = element;
+      let parent = element.parentElement;
+      while (parent) {
+        if (adPatterns.classAndId.test(parent.className) || 
+            adPatterns.classAndId.test(parent.id) ||
+            parent.classList.contains('ad') ||
+            parent.classList.contains('dfp-ad')) {
+          adContainer = parent;
+        }
+        parent = parent.parentElement;
+      }
+
+      // Check if a widget already exists within or after the ad container
+      const existingWidget = adContainer.parentElement.querySelector('.adfriend-widget');
+      if (existingWidget) {
+        return; // Skip if widget already exists
+      }
+
+      // Get parent element of ad container
+      const adContainerParent = adContainer.parentElement;
+      console.log('PARENT CLASS IS: ', adContainerParent.classList)
+      console.log('PARENT OFFSET IS: ', adContainerParent.offsetWidth, adContainerParent.offsetHeight);
+
+      // Get the computed style of the ad container
+      // const adStyle = window.getComputedStyle(adContainer.parentElement);
+      // const adWidth = adStyle.width;
+      // const adHeight = adStyle.height;
+
+      // Get the bounding rectangle of the ad container's parent
+      // const parentRect = adContainerParent.getBoundingClientRect();
+
+      // Get the computed styles for margins
+      const parentStyle = window.getComputedStyle(adContainerParent);
+
+      // Parse padding & border values values
+      const parentHeight = parseFloat(parentStyle.height);
+      const paddingTop = parseFloat(parentStyle.paddingTop);
+      const paddingBottom = parseFloat(parentStyle.paddingBottom);
+      const borderTop = parseFloat(parentStyle.borderTopWidth);
+      const borderBottom = parseFloat(parentStyle.borderBottomWidth);
+
+      console.log('PARENT HEIGHT IS: ', parentHeight);
+      console.log('PARENT TOP PADDING IS: ', paddingTop);
+      console.log('PARENT BOTTOM PADDING IS: ', paddingBottom);
+      console.log('PARENT BORDER TOP IS: ', borderTop);
+      console.log('PARENT BORDER BOTTOM IS: ', borderBottom);
+
+      const newPaddingBottom = paddingBottom - paddingBottom;
+      const newPaddingTop = paddingTop - paddingTop;
+      adContainerParent.style.paddingBottom = newPaddingBottom + 'px';
+      adContainerParent.style.paddingTop = newPaddingTop + 'px';
+
+      // Calculate total width and height including borders and margins
+      let totalWidth = parentStyle.width;
+      let totalHeight = parentHeight + paddingTop + paddingBottom + borderTop + borderBottom;
+
+      const adWidth = adContainerParent.offsetWidth + 'px'; // Converts to string with px
+      const adHeight = adContainerParent.offsetHeight + 'px';
+      totalWidth = totalWidth + 'px';
+      totalHeight = totalHeight + 'px';
+
+      console.log('PARENT RECT IS: ', totalWidth, totalHeight);
+
+      // Create and insert widget
       const widget = document.createElement('div');
       widget.className = 'adfriend-widget';
-      // Mark widget as processed to prevent it from being detected as an ad
       widget.setAttribute('data-adfriend-processed', 'true');
-      
 
-      // Add content based on the selected type
+      // Apply the dimension and styling
+      widget.style.width = adWidth;
+      widget.style.minHeight = adHeight;
+
+        // Add content based on the selected type
       if (contentType === 'quotes') {
         const randomQuote = motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
         widget.textContent = randomQuote;
@@ -151,8 +237,23 @@ function replaceAdsWithContent(contentType) {
         widget.textContent = randomReminder;
       }
 
-      // Insert the widget after the ad element
-      element.parentNode.insertBefore(widget, element.nextSibling);
+      // Hide the ad container after getting its dimensions
+      adContainer.style.display = 'none';
+
+      // Mark the entire ad container and its children as processed
+      adContainer.setAttribute('data-adfriend-processed', 'true');
+      adContainer.querySelectorAll('*').forEach(child => {
+        child.setAttribute('data-adfriend-processed', 'true');
+      });
+
+      /* Only insert widget if one doesn't already exist after this container
+      const nextSibling = adContainer.nextElementSibling;
+      if (!nextSibling || !nextSibling.classList.contains('adfriend-widget')) {
+      */
+
+
+      // Insert the widget after the ad container
+      adContainer.parentNode.insertBefore(widget, adContainer.nextSibling);
     }
   });
 }
