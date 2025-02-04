@@ -18,7 +18,8 @@ const activityReminders = [
 
 // Function to replace ad elements with custom content
 function replaceAdsWithContent(contentType) {
-  // Find ad elements (you may need to refine this selector based on common ad patterns)
+/* Former ad detection and removal logic
+
   const adElements = document.querySelectorAll('div, img, iframe');
 
   const adSizes = [
@@ -32,6 +33,7 @@ function replaceAdsWithContent(contentType) {
     { width: 1366, height: 31 }
   ];
 
+  
   adElements.forEach(ad => {
     const rect = ad.getBoundingClientRect();
     const isAdSize = adSizes.some(size => rect.width === size.width && rect.height === size.height);
@@ -67,15 +69,78 @@ function replaceAdsWithContent(contentType) {
         elderSibling.remove();
       }
 
+
 			if (youngerSibling && youngerSibling.classList.contains('adfriend-widget')) {
 				// Remove younger widget
 				console.log('Removing younger widget:', youngerSibling);
 				youngerSibling.remove();
 			}
+*/
+  
+  // Common ad-related keywords and patterns
+  const adPatterns = {
+    classAndId: /\b(ad|ads|advert|banner|commercial|promo|sponsor|advertisement|marketing)\b/i,
+    attributes: ['data-ad', 'data-ad-client', 'data-ad-slot', 'data-adtest', 'data-advertising'],
+    domains: /(?:doubleclick|adsystem|adskeeper|adnxs|taboola|outbrain|mgid|criteo|googleadservices|google.*ads|adroll|amazon-adsystem|facebook.*ads)/i
+  };
+
+  // Find potential ad elements
+  const elements = document.querySelectorAll('div:not(.adfriend-widget), iframe, img, section, aside');
+  
+  elements.forEach(element => {
+    // Skip if this element has already been processed
+    if (element.hasAttribute('data-adfriend-processed')) {
+      return;
+    }
+
+    let score = 0;
+    
+    // Check element attributes
+    const attributes = Array.from(element.attributes).map(attr => `${attr.name}=${attr.value}`).join(' ');
+    
+    // Check class names and IDs
+    if (adPatterns.classAndId.test(element.className) || adPatterns.classAndId.test(element.id)) {
+      score += 2;
+    }
+
+    // Check custom data attributes
+    adPatterns.attributes.forEach(attr => {
+      if (element.hasAttribute(attr)) score += 2;
+    });
+
+    // Check src/href attributes for ad network domains
+    const src = element.src || element.href || '';
+    if (adPatterns.domains.test(src)) {
+      score += 3;
+    }
+
+    // Check for common ad properties
+    if (element.tagName === 'IFRAME' && !element.srcdoc) score += 1;
+    if (element.style.position === 'fixed') score += 1;
+    if (element.style.zIndex > 1000) score += 1;
+
+    // Check parent elements for ad indicators
+    let parent = element.parentElement;
+    for (let i = 0; i < 3 && parent; i++) {
+      if (adPatterns.classAndId.test(parent.className) || adPatterns.classAndId.test(parent.id)) {
+        score += 1;
+      }
+      parent = parent.parentElement;
+    }
+
+    // If element seems to be an ad (score threshold can be adjusted)
+    if (score >= 2) {
+      console.log('Ad detected with score:', score, element);
+      element.style.display = 'none';
+      // Mark this element as processed
+      element.setAttribute('data-adfriend-processed', 'true');
 
       // Create a new widget element
       const widget = document.createElement('div');
       widget.className = 'adfriend-widget';
+      // Mark widget as processed to prevent it from being detected as an ad
+      widget.setAttribute('data-adfriend-processed', 'true');
+      
 
       // Add content based on the selected type
       if (contentType === 'quotes') {
@@ -87,10 +152,12 @@ function replaceAdsWithContent(contentType) {
       }
 
       // Insert the widget after the ad element
-      ad.parentNode.insertBefore(widget, ad.nextSibling);
+      element.parentNode.insertBefore(widget, element.nextSibling);
     }
   });
 }
+
+
 
 // Function to initialize the MutationObserver
 function initMutationObserver(contentType) {
