@@ -19,32 +19,67 @@ const activityReminders = [
 // Function to replace ad elements with custom content
 function replaceAdsWithContent(contentType) {
   // Find ad elements (you may need to refine this selector based on common ad patterns)
-  const adElements = document.querySelectorAll('.ad, .advertisement, iframe');
+  const adElements = document.querySelectorAll('div, img, iframe');
+
+  const adSizes = [
+    { width: 1366, height: 351 },
+    { width: 1366, height: 284 },
+    { width: 1366, height: 281 },
+    { width: 1366, height: 250 },
+    { width: 1366, height: 198 },
+    { width: 1366, height: 90 },
+    { width: 1366, height: 31 }
+  ];
 
   adElements.forEach(ad => {
-    // Hide the ad
-    ad.style.display = 'none';
+    const rect = ad.getBoundingClientRect();
+    const isAdSize = adSizes.some(size => rect.width === size.width && rect.height === size.height);
 
-    // Create a new widget element
-    const widget = document.createElement('div');
-    widget.className = 'adfriend-widget';
+    if (isAdSize) {
+      console.log('Ad detected:', ad);
+      ad.style.display = 'none';
 
-    // Add content based on the selected type
-    if (contentType === 'quotes') {
-      const randomQuote = motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
-      widget.textContent = randomQuote;
-    } else if (contentType === 'reminders') {
-      const randomReminder = activityReminders[Math.floor(Math.random() * activityReminders.length)];
-      widget.textContent = randomReminder;
+      // Create a new widget element
+      const widget = document.createElement('div');
+      widget.className = 'adfriend-widget';
+
+      // Add content based on the selected type
+      if (contentType === 'quotes') {
+        const randomQuote = motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
+        widget.textContent = randomQuote;
+      } else if (contentType === 'reminders') {
+        const randomReminder = activityReminders[Math.floor(Math.random() * activityReminders.length)];
+        widget.textContent = randomReminder;
+      }
+
+      // Insert the widget after the ad element
+      ad.parentNode.insertBefore(widget, ad.nextSibling);
     }
-
-    // Insert the widget after the ad element
-    ad.parentNode.insertBefore(widget, ad.nextSibling);
   });
+}
+
+// Function to initialize the MutationObserver
+function initMutationObserver(contentType) {
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+        console.log('New elements added to the DOM. Checking for ads...');
+        replaceAdsWithContent(contentType);
+      }
+    });
+  });
+
+  // Start observing the document for changes
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 // Load user preferences and replace ads
 chrome.storage.sync.get(['contentType'], (result) => {
   const contentType = result.contentType || 'quotes'; // Default to quotes
+
+  // Initial ad replacement
   replaceAdsWithContent(contentType);
+
+  // Initialize MutationObserver to detect dynamically loaded ads
+  initMutationObserver(contentType);
 });
