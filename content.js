@@ -95,16 +95,23 @@ function replaceAdsWithContent(contentType) {
 // Function to initialize the MutationObserver
 function initMutationObserver(contentType) {
   const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        console.log('New elements added to the DOM. Checking for ads...');
-        replaceAdsWithContent(contentType);
-      }
-    });
+    try {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          console.log('New elements added to the DOM. Checking for ads...');
+          replaceAdsWithContent(contentType);
+        }
+      });
+    } catch (error) {
+      console.error('Error in mutation observer:', error);
+    }
   });
 
   // Start observing the document for changes
   observer.observe(document.body, { childList: true, subtree: true });
+
+  // Cleanup function
+  return () => observer.disconnect();
 }
 
 // Load user preferences and replace ads
