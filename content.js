@@ -27,6 +27,7 @@ function replaceAdsWithContent(contentType) {
     { width: 1366, height: 281 },
     { width: 1366, height: 250 },
     { width: 1366, height: 198 },
+    { width: 1366, height: 155 },
     { width: 1366, height: 90 },
     { width: 1366, height: 31 }
   ];
@@ -38,6 +39,39 @@ function replaceAdsWithContent(contentType) {
     if (isAdSize) {
       console.log('Ad detected:', ad);
       ad.style.display = 'none';
+
+			// Check if a widget already exists before the ad
+			let elderSibling = ad.previousElementSibling;
+			let youngerSibling = ad.nextElementSibling;
+			const divSiblings = [];
+
+			if (elderSibling) {
+				while (elderSibling && !elderSibling.classList.contains('adfriend-widget')) {
+					divSiblings.push(elderSibling);
+					elderSibling = elderSibling.previousElementSibling;
+				}
+			}
+
+			if (youngerSibling) {
+				while (youngerSibling && !youngerSibling.classList.contains('adfriend-widget')) {
+					divSiblings.push(youngerSibling);
+					youngerSibling = youngerSibling.nextElementSibling;
+				}
+			}
+
+			console.log("Previous div siblings:", divSiblings);
+
+      if (elderSibling && elderSibling.classList.contains('adfriend-widget')) {
+        // Remove the existing widget
+        console.log('Removing elder widget:', elderSibling);
+        elderSibling.remove();
+      }
+
+			if (youngerSibling && youngerSibling.classList.contains('adfriend-widget')) {
+				// Remove younger widget
+				console.log('Removing younger widget:', youngerSibling);
+				youngerSibling.remove();
+			}
 
       // Create a new widget element
       const widget = document.createElement('div');
