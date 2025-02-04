@@ -1,0 +1,23 @@
+.popup {
+	padding: 10px;
+	font-family: Arial, sans-serif;
+	width: 100%;
+}
+
+.popup h3 {
+	margin-top: 0;
+}
+
+.popup select, .popup button {
+	margin-top: 10px;
+	padding: 5px;
+}
+
+.adfriend-widget {
+	padding: 10px;
+	border: 1px solid #ccc;
+	border-radius: 5px;
+	text-align: center;
+	font-family: Arial, sans-serif;
+	margin: 10px 0;
+}
