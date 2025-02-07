@@ -34,13 +34,15 @@ function isAdElement(element) {
 
 	// Early return for common ad classes/IDs (highest impact indicators)
 	if (className && typeof className === 'string' && (
-		className.includes('ad') || 
-			className.includes('ads') || 
+		className.includes(' ad ') || 
+			className.includes(' ads ') || 
 			className.includes('advertisement'))) {
+		console.log("Ad Class Is: ", className);
 		return true;
 	}
 
 	if (id && (id.includes('ad') || id.includes('ads') || id.includes('advertisement'))) {
+		console.log("Ad Id Is: ", id);
 		return true;
 	}
 
@@ -52,7 +54,10 @@ function isAdElement(element) {
 		const src = element.src;
 		if (src && adPatterns.domains.test(src)) {
 			score += 3;
-			if (score >= 2) return true;
+			if (score >= 2) {
+				console.log("Ad Src Is: ", src);
+				return true;
+			}
 		}
 	}
 
@@ -78,7 +83,10 @@ function isAdElement(element) {
 			// and the value is non-empty
 			if (!hasAdAttribute && attrValue && adPatterns.attributeValues.test(attrValue)) {
 				score += 2;
-				if (score >= 2) return true;
+				if (score >= 2) {
+					console.log("Ad Attribute Is: ", attrName);
+					return true;
+				}
 			}
 		}
 	}
@@ -89,7 +97,10 @@ function isAdElement(element) {
 		if (style.position === 'fixed') score += 1;
 		if (parseFloat(style.zIndex) > 1000) score += 1;
 
-		if (score >= 2) return true;
+		if (score >= 2) {
+			console.log("Ad Style Is ", style);
+			return true;
+		}
 	}
 
 	// Parent checks - limit to immediate parent for performance
@@ -209,37 +220,137 @@ function replaceAdsWithContent(contentType) {
 	});
 }
 
+// Throttle function that ensures a function is called at most once per specified time period
+function throttle(func, limit) {
+	let inThrottle = false;
+	let savedArgs = null;
+	let savedThis = null;
 
+	return function wrapper(...args) {
+		// If we're in throttle period, save the most recent call
+		if (inThrottle) {
+			savedArgs = args;
+			savedThis = this;
+			return;
+		}
+
+		// Call the function and set throttle flag
+		func.apply(this, args);
+		inThrottle = true;
+
+		// Start timeout to reset throttle
+		setTimeout(() => {
+			inThrottle = false;
+			// If there was a call during throttle period, call it now
+			if (savedArgs) {
+				wrapper.apply(savedThis, savedArgs);
+				savedArgs = null;
+				savedThis = null;
+			}
+		}, limit);
+	};
+}
 
 // Function to initialize the MutationObserver
 function initMutationObserver(contentType) {
+	// Keep track of processed mutations to avoid redundant work
+	const processedMutations = new WeakSet();
+
+	// Throttled version of replaceAdsWithContent
+	const throttledReplaceAds = throttle((contentType) => {
+		replaceAdsWithContent(contentType);
+	}, 250); // Adjust this value based on performance needs (currently set to 250ms)
+
+	// Create batch processor for mutations
+	const processMutationsBatch = (mutations) => {
+		let shouldProcess = false;
+
+		// Check if any mutation in the batch needs processing
+		for (const mutation of mutations) {
+			if (processedMutations.has(mutation)) continue;
+
+			if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+				// Check if any added node is a potential ad container
+				const hasRelevantNodes = Array.from(mutation.addedNodes).some(node => {
+					if (node.nodeType !== Node.ELEMENT_NODE) return false;
+
+					// Check for relevant tag names first (fast check)
+					if (node.tagName === 'IFRAME' || 
+						node.tagName === 'DIV' ||
+						node.tagName === 'IMG' ||
+						node.tagName === 'ASIDE') {
+						return true;
+					}
+
+					// Check class names and IDs against our comprehensive patterns
+					if (node.className && typeof node.className === 'string') {
+						if (adPatterns.classAndId.test(node.className)) {
+							return true;
+						}
+					}
+
+					if (node.id && adPatterns.classAndId.test(node.id)) {
+						return true;
+					}
+
+					// Check for ad-related attributes
+					if (Array.from(node.attributes).some(attr => 
+						adPatterns.attributes.has(attr.name) || 
+							adPatterns.attributeValues.test(attr.value))) {
+						return true;
+					}
+
+					return false;
+				});
+
+				if (hasRelevantNodes) {
+					shouldProcess = true;
+					processedMutations.add(mutation);
+				}
+			}
+		}
+
+		// Only call replaceAdsWithContent if we found relevant mutations
+		if (shouldProcess) {
+			console.log('New potential ad elements detected. Processing...');
+			throttledReplaceAds(contentType);
+		}
+	};
+
+	// Create the observer with batched and throttled processing
 	const observer = new MutationObserver((mutations) => {
 		try {
-			mutations.forEach((mutation) => {
-				if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-					console.log('New elements added to the DOM. Checking for ads...');
-					replaceAdsWithContent(contentType);
-				}
-			});
+			processMutationsBatch(mutations);
 		} catch (error) {
 			console.error('Error in mutation observer:', error);
 		}
 	});
 
-	// Start observing the document for changes
-	observer.observe(document.body, { childList: true, subtree: true });
+	// Configure observer with optimized options
+	const observerOptions = {
+		childList: true,
+		subtree: true,
+		attributes: false, // Only observe DOM additions, not attribute changes
+		characterData: false // Ignore text content changes
+	};
+
+	// Start observing the document with optimized options
+	observer.observe(document.body, observerOptions);
 
 	// Cleanup function
-	return () => observer.disconnect();
+	return () => {
+		observer.disconnect();
+	};
 }
 
 // Load user preferences and replace ads
 chrome.storage.sync.get(['contentType'], (result) => {
 	const contentType = result.contentType || 'quotes'; // Default to quotes
 
-	// Initial ad replacement
-	replaceAdsWithContent(contentType);
-
-	// Initialize MutationObserver to detect dynamically loaded ads
-	initMutationObserver(contentType);
+	// Initial ad replacement with a small delay to let the page load
+	setTimeout(() => {
+		replaceAdsWithContent(contentType);
+		// Initialize MutationObserver to detect dynamically loaded ads
+		initMutationObserver(contentType);
+	}, 100);
 });
