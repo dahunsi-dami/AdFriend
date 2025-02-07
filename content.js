@@ -19,7 +19,7 @@ const activityReminders = [
 // Common ad-related keywords and patterns
 const adPatterns = {
 	classAndId: /\b(ad|ads|advert|banner|commercial|promo|sponsor|advertisement|marketing|StandardAd)\b/i,
-	attributes: ['data-ad', 'data-ad-client', 'data-ad-slot', 'data-adtest', 'data-advertising', 'data-ad-loc', 'data-ad-unit', 'data-ad-size', 'data-ad-region'],
+	attributes: new Set(['data-ad', 'data-ad-client', 'data-ad-slot', 'data-adtest', 'data-advertising', 'data-ad-loc', 'data-ad-unit', 'data-ad-size', 'data-ad-region']),
 	attributeValues: /\b(StandardAd|Advertisement|[aA]d-\w+|[aA]ds?\b|[aA]dvert(isement)?s?|sponsor(ed)?|promoted|marketing|dfp)/i,
 	domains: /(?:doubleclick|adsystem|adskeeper|adnxs|taboola|outbrain|mgid|criteo|googleadservices|google.*ads|adroll|amazon-adsystem|facebook.*ads)/i
 };
@@ -28,44 +28,79 @@ const adPatterns = {
 function isAdElement(element) {
 	let score = 0;
 
-	// Check element attributes
-	const attributes = Array.from(element.attributes).map(attr => `${attr.name}=${attr.value}`).join(' ');
+	// Quick checks first - these are the most common and fastest to evaluate
+	const className = element.className;
+	const id = element.id;
 
-	// Check class names and IDs
-	if (adPatterns.classAndId.test(element.className) || adPatterns.classAndId.test(element.id)) {
-		score += 2;
+	// Early return for common ad classes/IDs (highest impact indicators)
+	if (className && typeof className === 'string' && (
+		className.includes('ad') || 
+			className.includes('ads') || 
+			className.includes('advertisement'))) {
+		return true;
 	}
 
-	// Check custom data attributes
-	adPatterns.attributes.forEach(attr => {
-		if (element.hasAttribute(attr)) score += 2;
-	});
+	if (id && (id.includes('ad') || id.includes('ads') || id.includes('advertisement'))) {
+		return true;
+	}
 
-	// Check if any attribute value matches ad patterns
-	Array.from(element.attributes).forEach(attr => {
-		if (adPatterns.attributeValues.test(attr.value)) {
-			score += 2;
+	// Check for iframes without srcdoc (common ad format)
+	if (element.tagName === 'IFRAME' && !element.srcdoc) {
+		score += 1;
+
+		// Check src for ad domains only if it's an iframe
+		const src = element.src;
+		if (src && adPatterns.domains.test(src)) {
+			score += 3;
+			if (score >= 2) return true;
 		}
-	});
-
-	// Check src/href attributes for ad network domains
-	const src = element.src || element.href || '';
-	if (adPatterns.domains.test(src)) {
-		score += 3;
 	}
 
-	// Check for common ad properties
-	if (element.tagName === 'IFRAME' && !element.srcdoc) score += 1;
-	if (element.style.position === 'fixed') score += 1;
-	if (element.style.zIndex > 1000) score += 1;
+	// Batch attribute checking for better performance
+	const attributes = element.attributes;
+	if (attributes) {
+		let hasAdAttribute = false;
 
-	// Check parent elements for ad indicators
-	let parent = element.parentElement;
-	for (let i = 0; i < 3 && parent; i++) {
-		if (adPatterns.classAndId.test(parent.className) || adPatterns.classAndId.test(parent.id)) {
+		// Single loop through attributes
+		for (let i = 0; i < attributes.length; i++) {
+			const attr = attributes[i];
+			const attrName = attr.name;
+			const attrValue = attr.value;
+
+			// Check for common ad attributes (using Set for O(1) lookup)
+			if (adPatterns.attributes.has(attrName)) {
+				score += 2;
+				if (score >= 2) return true;
+				hasAdAttribute = true;
+			}
+
+			// Only check attribute values if we haven't found an ad attribute
+			// and the value is non-empty
+			if (!hasAdAttribute && attrValue && adPatterns.attributeValues.test(attrValue)) {
+				score += 2;
+				if (score >= 2) return true;
+			}
+		}
+	}
+
+	// Style checks (only if we haven't already identified as an ad)
+	const style = element.style;
+	if (style) {
+		if (style.position === 'fixed') score += 1;
+		if (parseFloat(style.zIndex) > 1000) score += 1;
+
+		if (score >= 2) return true;
+	}
+
+	// Parent checks - limit to immediate parent for performance
+	// Only check parent if we still need more points
+	if (score >= 1) {
+		const parent = element.parentElement;
+		if (parent && (
+			adPatterns.classAndId.test(parent.className) || 
+				adPatterns.classAndId.test(parent.id))) {
 			score += 1;
 		}
-		parent = parent.parentElement;
 	}
 
 	return score >= 2;
